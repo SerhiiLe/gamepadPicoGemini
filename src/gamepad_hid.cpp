@@ -7,21 +7,25 @@
 volatile uint8_t g_rumble_intensity = 0;
 volatile uint8_t g_led_intensity = 0;
 
-// Standard USB HID Gamepad Descriptor (16 Digital Buttons, 8-way Hat Switch, 6 16-bit Axes, PID Output Report)
+// Standard USB HID Gamepad Descriptor (15 Digital Buttons, 8-way Hat Switch, 4 16-bit Axes, 2 8-bit Triggers, PID Output Report)
 uint8_t const desc_hid_report[] = {
     HID_USAGE_PAGE(HID_USAGE_PAGE_DESKTOP),
     HID_USAGE(HID_USAGE_DESKTOP_GAMEPAD),
     HID_COLLECTION(HID_COLLECTION_APPLICATION),
 
-    // --- Input Report: 16 Digital Buttons (2 Bytes) ---
+    // --- Input Report: 15 Digital Buttons (15 bits + 1 bit padding = 2 Bytes) ---
     HID_USAGE_PAGE(HID_USAGE_PAGE_BUTTON),
     HID_USAGE_MIN(1),
-    HID_USAGE_MAX(16),
+    HID_USAGE_MAX(15),
     HID_LOGICAL_MIN(0),
     HID_LOGICAL_MAX(1),
     HID_REPORT_SIZE(1),
-    HID_REPORT_COUNT(16),
+    HID_REPORT_COUNT(15),
     HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),
+    // 1-bit constant padding to complete 2 bytes
+    HID_REPORT_SIZE(1),
+    HID_REPORT_COUNT(1),
+    HID_INPUT(HID_CONSTANT),
 
     // --- Input Report: Hat Switch / D-Pad (1 Byte) ---
     HID_USAGE_PAGE(HID_USAGE_PAGE_DESKTOP),
@@ -35,7 +39,7 @@ uint8_t const desc_hid_report[] = {
     HID_REPORT_COUNT(1),
     HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE | HID_NULL_STATE),
 
-    // --- Input Report: 6 Analog Axes (LX, LY, RX, RY, LT, RT) (12 Bytes) ---
+    // --- Input Report: 4 Analog Stick Axes (LX, LY, RX, RY) (8 Bytes: -32767 .. 32767) ---
     HID_USAGE_PAGE(HID_USAGE_PAGE_DESKTOP),
     HID_USAGE(HID_USAGE_DESKTOP_POINTER),
     HID_COLLECTION(HID_COLLECTION_PHYSICAL),
@@ -43,14 +47,22 @@ uint8_t const desc_hid_report[] = {
         HID_USAGE(HID_USAGE_DESKTOP_Y),        // Left Stick Y
         HID_USAGE(HID_USAGE_DESKTOP_RX),       // Right Stick X
         HID_USAGE(HID_USAGE_DESKTOP_RY),       // Right Stick Y
-        HID_USAGE(HID_USAGE_DESKTOP_Z),        // Left Trigger LT
-        HID_USAGE(HID_USAGE_DESKTOP_RZ),       // Right Trigger RT
         HID_LOGICAL_MIN_N(-32767, 2),
         HID_LOGICAL_MAX_N(32767, 2),
         HID_REPORT_SIZE(16),
-        HID_REPORT_COUNT(6),
+        HID_REPORT_COUNT(4),
         HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),
     HID_COLLECTION_END,
+
+    // --- Input Report: 2 Analog Trigger Axes (LT, RT) (2 Bytes: 0 .. 255) ---
+    HID_USAGE_PAGE(HID_USAGE_PAGE_DESKTOP),
+    HID_USAGE(HID_USAGE_DESKTOP_Z),            // Left Trigger LT (Brake)
+    HID_USAGE(HID_USAGE_DESKTOP_RZ),           // Right Trigger RT (Accelerator)
+    HID_LOGICAL_MIN(0),
+    HID_LOGICAL_MAX_N(255, 2),                 // Positive 255 (2 bytes)
+    HID_REPORT_SIZE(8),
+    HID_REPORT_COUNT(2),
+    HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),
 
     // --- Output Report: Rumble & LED Feedback from Host (2 Bytes) ---
     HID_USAGE_PAGE(HID_USAGE_PAGE_PID),
@@ -167,9 +179,9 @@ bool gamepad_hid_send_report(uint32_t button_mask, int16_t lx, int16_t ly, int16
     report.rx = rx;
     report.ry = ry;
 
-    // Synthesize analog trigger axes Z and Rz with smooth ramping (emulating analog feel)
-    static float s_lt_axis = (float)AXIS_MIN_VALUE;
-    static float s_rt_axis = (float)AXIS_MIN_VALUE;
+    // Synthesize analog trigger axes Z and Rz with smooth ramping (0 .. 255)
+    static float s_lt_axis = 0.0f;
+    static float s_rt_axis = 0.0f;
     static unsigned long s_last_trigger_time = 0;
 
     unsigned long now = millis();
@@ -177,29 +189,29 @@ bool gamepad_hid_send_report(uint32_t button_mask, int16_t lx, int16_t ly, int16
     s_last_trigger_time = now;
     if (dt > 50) dt = 50;
 
-    float step = ((float)(AXIS_MAX_VALUE - AXIS_MIN_VALUE) / (float)TRIGGER_RAMP_MS) * (float)dt;
+    float step = (255.0f / (float)TRIGGER_RAMP_MS) * (float)dt;
 
     bool lt_pressed = (button_mask & (1UL << 6)) != 0;
     bool rt_pressed = (button_mask & (1UL << 7)) != 0;
 
     if (lt_pressed) {
         s_lt_axis += step;
-        if (s_lt_axis > (float)AXIS_MAX_VALUE) s_lt_axis = (float)AXIS_MAX_VALUE;
+        if (s_lt_axis > 255.0f) s_lt_axis = 255.0f;
     } else {
         s_lt_axis -= step;
-        if (s_lt_axis < (float)AXIS_MIN_VALUE) s_lt_axis = (float)AXIS_MIN_VALUE;
+        if (s_lt_axis < 0.0f) s_lt_axis = 0.0f;
     }
 
     if (rt_pressed) {
         s_rt_axis += step;
-        if (s_rt_axis > (float)AXIS_MAX_VALUE) s_rt_axis = (float)AXIS_MAX_VALUE;
+        if (s_rt_axis > 255.0f) s_rt_axis = 255.0f;
     } else {
         s_rt_axis -= step;
-        if (s_rt_axis < (float)AXIS_MIN_VALUE) s_rt_axis = (float)AXIS_MIN_VALUE;
+        if (s_rt_axis < 0.0f) s_rt_axis = 0.0f;
     }
 
-    report.z  = (int16_t)s_lt_axis;
-    report.rz = (int16_t)s_rt_axis;
+    report.z  = (uint8_t)(s_lt_axis + 0.5f);
+    report.rz = (uint8_t)(s_rt_axis + 0.5f);
 
     return usb_hid.sendReport(0, &report, sizeof(report));
 }

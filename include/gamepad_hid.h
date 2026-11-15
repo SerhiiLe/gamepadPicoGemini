@@ -2,14 +2,14 @@
 #define GAMEPAD_HID_H
 
 typedef struct __attribute__((packed)) {
-    uint8_t  buttons[2];   // 16 Digital Buttons (2 bytes / 16 bits total)
+    uint8_t  buttons[2];   // 15 Digital Buttons + 1-bit padding (2 bytes / 16 bits total)
     uint8_t  hat;          // 8-Way Hat Switch / D-Pad (1 byte: 0=Neutral, 1=Up, 2=Up-Right, ..., 8=Up-Left)
     int16_t  x;            // Left Stick X (-32767 .. 32767)
     int16_t  y;            // Left Stick Y (-32767 .. 32767)
     int16_t  rx;           // Right Stick X (-32767 .. 32767)
     int16_t  ry;           // Right Stick Y (-32767 .. 32767)
-    int16_t  z;            // Left Trigger LT (-32767 .. 32767)
-    int16_t  rz;           // Right Trigger RT (-32767 .. 32767)
+    uint8_t  z;            // Left Trigger LT (0 .. 255)
+    uint8_t  rz;           // Right Trigger RT (0 .. 255)
 } GamepadInputReport_t;
 
 // Feedback received from Host
