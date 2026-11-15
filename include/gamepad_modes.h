@@ -20,10 +20,10 @@ enum GamepadMode : uint8_t {
 #define COLOR_ANDROID_G    3
 #define COLOR_ANDROID_B    0
 
-// Mode DualShock 4: Deep Blue (R=0, G=2, B=15)
-#define COLOR_DS4_R        1
-#define COLOR_DS4_G        0
-#define COLOR_DS4_B        8
+// Mode DualShock 4: Dim White initially upon boot (R=5, G=5, B=5)
+#define COLOR_DS4_R        5
+#define COLOR_DS4_G        5
+#define COLOR_DS4_B        5
 
 #endif // GAMEPAD_MODES_H
 

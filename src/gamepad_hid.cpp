@@ -37,6 +37,17 @@ static void hid_set_report_cb(uint8_t report_id, hid_report_type_t report_type, 
                 g_rumble_left  = motor_l;
             }
         }
+
+        if (bufsize >= offset + 8) {
+            uint8_t flags = buffer[offset + 0];
+            // Update Lightbar LED if LED flag (bit 1) is set, or flags == 0, or non-zero color sent
+            if ((flags & 0x02) || (flags == 0) || (buffer[offset + 5] > 0 || buffer[offset + 6] > 0 || buffer[offset + 7] > 0)) {
+                g_host_led_r = buffer[offset + 5];
+                g_host_led_g = buffer[offset + 6];
+                g_host_led_b = buffer[offset + 7];
+                g_host_led_active = true;
+            }
+        }
     } else {
         // Generic PC / Android Output Report (Byte 0: Rumble)
         if (bufsize >= 1) {
