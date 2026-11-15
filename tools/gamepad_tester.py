@@ -34,6 +34,26 @@ EVIOCSFF      = 1 << 30 | 48 << 16 | ord('E') << 8 | 0x80
 HIDIOCGRAWNAME = 2 << 30 | 256 << 16 | ord('H') << 8 | 0x04
 
 
+def find_xpad_led_path(event_path):
+    """Locates the sysfs brightness path for an Xbox 360 controller's xpad LED."""
+    if not event_path:
+        return None
+    try:
+        ev_name = os.path.basename(event_path)
+        dev_sys = os.path.realpath(f'/sys/class/input/{ev_name}/device')
+        p = dev_sys
+        while p and p != '/':
+            cand = os.path.join(p, 'leds')
+            if os.path.isdir(cand):
+                leds = [x for x in os.listdir(cand) if x.startswith('xpad')]
+                if leds:
+                    return os.path.join(cand, leds[0], 'brightness')
+            p = os.path.dirname(p)
+    except Exception:
+        pass
+    return None
+
+
 class GamepadDevice:
     def __init__(self, name, event_path=None, hidraw_path=None, is_ds4=False, is_xpad=False):
         self.name = name
@@ -41,7 +61,10 @@ class GamepadDevice:
         self.hidraw_path = hidraw_path
         self.is_ds4 = is_ds4
         self.is_xpad = is_xpad
+        self._ff_fd = None
         self.active_effect_id = -1
+        self._ff_stop_timer = None
+        self.xpad_led_path = find_xpad_led_path(event_path) if is_xpad else None
 
     def send_rumble(self, strong_pct=0, weak_pct=0, duration_ms=1000):
         """
@@ -60,30 +83,90 @@ class GamepadDevice:
                         self.send_ds4_raw(motor_l=0, motor_r=0)
                     threading.Thread(target=_stop_after, daemon=True).start()
                 return True
-            except Exception as e:
+            except Exception:
                 pass
 
-        # Fallback / standard method for Xbox 360 and generic EV_FF gamepads:
+        # Standard Linux evdev Force Feedback (for Xbox 360 and generic EV_FF gamepads):
         if self.event_path:
             try:
+                if self._ff_fd is None:
+                    self._ff_fd = os.open(self.event_path, os.O_RDWR)
+
+                if self._ff_stop_timer and self._ff_stop_timer.is_alive():
+                    self._ff_stop_timer.cancel()
+
+                if strong_pct == 0 and weak_pct == 0:
+                    if self.active_effect_id != -1:
+                        stop_event = struct.pack('qqHHi', 0, 0, EV_FF, self.active_effect_id, 0)
+                        os.write(self._ff_fd, stop_event)
+                    return True
+
                 strong_val = int((strong_pct / 100.0) * 65535)
                 weak_val   = int((weak_pct / 100.0) * 65535)
 
-                fd = os.open(self.event_path, os.O_RDWR)
-                effect_data = struct.pack('HhHHHHHHH', FF_RUMBLE, -1, 0, 0, 0, duration_ms, 0, strong_val, weak_val)
-                effect_data += b'\x00' * 28  # pad union to 32 bytes (total 48 bytes)
-                res = fcntl.ioctl(fd, EVIOCSFF, effect_data)
+                # Exact 48-byte struct ff_effect on 64-bit Linux:
+                # type(H=2) + id(h=2) + direction(H=2) + button(H=2) + interval(H=2) +
+                # length(H=2) + delay(H=2) + 2x(pad=2) + strong(H=2) + weak(H=2) + 28s(union pad=28) = 48 bytes
+                effect_data = struct.pack(
+                    'HhHHHHH2xHH28s',
+                    FF_RUMBLE,
+                    self.active_effect_id,
+                    0, 0, 0,
+                    duration_ms, 0,
+                    strong_val, weak_val,
+                    b'\x00' * 28
+                )
+                res = fcntl.ioctl(self._ff_fd, EVIOCSFF, effect_data)
                 eff_id = struct.unpack('Hh', res[:4])[1]
                 self.active_effect_id = eff_id
 
-                play_event = struct.pack('qqHHi', 0, 0, EV_FF, eff_id, 1)
-                os.write(fd, play_event)
-                os.close(fd)
+                play_event = struct.pack('qqHHi', 0, 0, EV_FF, self.active_effect_id, 1)
+                os.write(self._ff_fd, play_event)
+
+                if duration_ms > 0:
+                    def _stop_worker():
+                        time.sleep(duration_ms / 1000.0)
+                        if self._ff_fd is not None and self.active_effect_id != -1:
+                            try:
+                                stop_ev = struct.pack('qqHHi', 0, 0, EV_FF, self.active_effect_id, 0)
+                                os.write(self._ff_fd, stop_ev)
+                            except Exception:
+                                pass
+                    self._ff_stop_timer = threading.Thread(target=_stop_worker, daemon=True)
+                    self._ff_stop_timer.start()
                 return True
             except Exception as e:
                 print(f"Error sending rumble to {self.event_path}: {e}")
                 return False
         return False
+
+    def close(self):
+        """Releases force feedback resources and closes device descriptors."""
+        if self._ff_fd is not None:
+            if self.active_effect_id != -1:
+                try:
+                    os.write(self._ff_fd, struct.pack('qqHHi', 0, 0, EV_FF, self.active_effect_id, 0))
+                except Exception:
+                    pass
+            try:
+                os.close(self._ff_fd)
+            except Exception:
+                pass
+            self._ff_fd = None
+
+    def __del__(self):
+        self.close()
+
+    def set_xpad_led(self, pattern):
+        """Sets Xbox 360 Ring of Light pattern (0..14) via sysfs."""
+        if not self.xpad_led_path:
+            return False, "xpad sysfs LED path not found"
+        try:
+            with open(self.xpad_led_path, 'w') as f:
+                f.write(f"{pattern}\n")
+            return True, "OK"
+        except (PermissionError, OSError) as e:
+            return False, f"Cannot write to {self.xpad_led_path} ({e.strerror or e}).\nTo enable, run: sudo chmod 666 /sys/class/leds/xpad*/brightness"
 
     def send_ds4_raw(self, motor_l=0, motor_r=0, led_r=None, led_g=None, led_b=None):
         """Sends USB Output Report 0x05 to Sony DualShock 4 via hidraw"""
@@ -211,6 +294,8 @@ def run_cli(devices):
         print("  4: Custom Vibration (Adjust Left & Right %, duration)")
         if dev.is_ds4:
             print("  5: DS4 Lightbar Color Picker (Red, Green, Blue, Yellow, Cyan, White, Custom)")
+        elif dev.is_xpad:
+            print("  5: Xbox 360 Ring of Light LED Patterns (Player 1-4, Rotating, Blink, etc.)")
         print("  6: Monitor Inputs (Real-time live buttons and axes)")
         print("  r: Rescan Devices")
         print("  q: Exit")
@@ -223,6 +308,8 @@ def run_cli(devices):
         if cmd == 'q':
             break
         elif cmd == 'r':
+            for d in devices:
+                d.close()
             devices = discover_gamepads()
             continue
         elif cmd == '1':
@@ -278,6 +365,28 @@ def run_cli(devices):
                 r, g, b = (255, 0, 0)
             print(f">> Sending Lightbar RGB ({r}, {g}, {b}) to DS4...")
             dev.set_ds4_color(r, g, b)
+        elif cmd == '5' and dev.is_xpad:
+            print("\nXbox 360 Ring of Light Patterns:")
+            print("  0: ⚫ All Off")
+            print("  1: ✨ All Blink")
+            print("  2: 1️⃣ Player 1 (Top-Left)")
+            print("  3: 2️⃣ Player 2 (Top-Right)")
+            print("  4: 3️⃣ Player 3 (Bottom-Left)")
+            print("  5: 4️⃣ Player 4 (Bottom-Right)")
+            print(" 10: 🔄 Rotating")
+            print(" 11: ⚡ Fast Blink")
+            print(" 12: ⏳ Slow Blink")
+            print(" 13: 🔀 Alternating")
+            try:
+                p_in = input("Enter pattern number (0-14) [2]: ").strip() or "2"
+                p_val = int(p_in)
+                ok, msg = dev.set_xpad_led(p_val)
+                if ok:
+                    print(f">> Successfully applied pattern {p_val} to Xbox 360 LED!")
+                else:
+                    print(f"[!] {msg}")
+            except ValueError:
+                print("Invalid pattern number!")
         elif cmd == '6':
             run_input_monitor(dev)
 
@@ -315,7 +424,7 @@ def run_gui(devices):
 
     root = tk.Tk()
     root.title("Gamepad Tester - Rumble & Lightbar (DS4 / Xbox 360)")
-    root.geometry("680x540")
+    root.geometry("680x560")
     root.resizable(False, False)
 
     # Frame: Device Selection
@@ -325,19 +434,6 @@ def run_gui(devices):
     dev_var = tk.StringVar()
     dev_combo = ttk.Combobox(dev_frame, textvariable=dev_var, state="readonly", width=65)
     dev_combo.pack(side="left", padx=5)
-
-    def refresh_devices():
-        nonlocal devices
-        devices = discover_gamepads()
-        if not devices:
-            dev_combo['values'] = ["No compatible gamepads found"]
-            dev_combo.current(0)
-            return
-        dev_combo['values'] = [f"{d.name} ({d.event_path or d.hidraw_path})" for d in devices]
-        dev_combo.current(0)
-
-    ttk.Button(dev_frame, text="↻ Refresh", command=refresh_devices).pack(side="left", padx=5)
-    refresh_devices()
 
     def get_selected_dev():
         idx = dev_combo.current()
@@ -392,9 +488,14 @@ def run_gui(devices):
     ttk.Button(btn_box, text="🟣 Pulse Both (1s)", command=trigger_both).pack(side="left", padx=6)
     ttk.Button(btn_box, text="⏹ Stop", command=trigger_stop).pack(side="left", padx=6)
 
-    # Frame: DualShock 4 Lightbar
-    ds4_frame = ttk.LabelFrame(root, text=" Sony DualShock 4 Lightbar RGB Control ", padding=10)
-    ds4_frame.pack(fill="x", padx=12, pady=8)
+    # Dynamic Container for Controller LEDs
+    led_container = ttk.Frame(root)
+    led_container.pack(fill="x", padx=12, pady=4)
+
+    # -------------------------------------------------------------
+    # 1. Sony DualShock 4 Lightbar Frame
+    # -------------------------------------------------------------
+    ds4_frame = ttk.LabelFrame(led_container, text=" Sony DualShock 4 Lightbar RGB Control ", padding=10)
 
     preview_canvas = tk.Canvas(ds4_frame, width=54, height=54, bg="#FFFFFF", highlightthickness=2, highlightbackground="#555")
     preview_canvas.grid(row=0, column=2, rowspan=3, padx=16, pady=4)
@@ -411,7 +512,6 @@ def run_gui(devices):
     preset_box = ttk.Frame(ds4_frame)
     preset_box.grid(row=0, column=0, columnspan=3, pady=6, sticky="w")
 
-    # RGB Slider Labels & Controls
     rgb_box = ttk.Frame(ds4_frame)
     rgb_box.grid(row=1, column=0, columnspan=3, pady=4, sticky="w")
 
@@ -480,7 +580,6 @@ def run_gui(devices):
     ttk.Button(preset_box, text="🔷 Cyan", width=7, command=lambda: update_ds4_color(0, 255, 255)).pack(side="left", padx=2)
     ttk.Button(preset_box, text="⚪ White", width=7, command=lambda: update_ds4_color(255, 255, 255)).pack(side="left", padx=2)
 
-    # Actions: Live update checkbox & Apply button
     ctrl_bar = ttk.Frame(ds4_frame)
     ctrl_bar.grid(row=2, column=0, columnspan=4, pady=6, sticky="w")
 
@@ -494,6 +593,92 @@ def run_gui(devices):
     ttk.Button(ctrl_bar, text="Apply Color", command=on_apply_click).pack(side="left", padx=10)
     ttk.Button(ctrl_bar, text="⚫ Off", width=7, command=lambda: update_ds4_color(0, 0, 0)).pack(side="left", padx=15)
 
+    # -------------------------------------------------------------
+    # 2. Microsoft Xbox 360 Ring of Light Frame
+    # -------------------------------------------------------------
+    xpad_frame = ttk.LabelFrame(led_container, text=" Microsoft Xbox 360 Ring of Light LED Patterns ", padding=10)
+
+    xpad_btn_box = ttk.Frame(xpad_frame)
+    xpad_btn_box.pack(fill="x", pady=4)
+
+    def apply_xpad_pattern(pattern):
+        d = get_selected_dev()
+        if d and d.is_xpad:
+            ok, msg = d.set_xpad_led(pattern)
+            if ok:
+                xpad_status_lbl.config(text=f"Pattern {pattern} applied successfully!", foreground="green")
+            else:
+                xpad_status_lbl.config(text=f"⚠️ {msg}", foreground="#c9302c")
+
+    p_box = ttk.Frame(xpad_btn_box)
+    p_box.pack(anchor="w", pady=3)
+    ttk.Label(p_box, text="Players:").pack(side="left", padx=4)
+    ttk.Button(p_box, text="1️⃣ Player 1", width=10, command=lambda: apply_xpad_pattern(2)).pack(side="left", padx=3)
+    ttk.Button(p_box, text="2️⃣ Player 2", width=10, command=lambda: apply_xpad_pattern(3)).pack(side="left", padx=3)
+    ttk.Button(p_box, text="3️⃣ Player 3", width=10, command=lambda: apply_xpad_pattern(4)).pack(side="left", padx=3)
+    ttk.Button(p_box, text="4️⃣ Player 4", width=10, command=lambda: apply_xpad_pattern(5)).pack(side="left", padx=3)
+    ttk.Button(p_box, text="⚫ Off", width=7, command=lambda: apply_xpad_pattern(0)).pack(side="left", padx=8)
+
+    a_box = ttk.Frame(xpad_btn_box)
+    a_box.pack(anchor="w", pady=3)
+    ttk.Label(a_box, text="Modes:  ").pack(side="left", padx=4)
+    ttk.Button(a_box, text="🔄 Rotating", width=11, command=lambda: apply_xpad_pattern(10)).pack(side="left", padx=3)
+    ttk.Button(a_box, text="⚡ Fast Blink", width=12, command=lambda: apply_xpad_pattern(11)).pack(side="left", padx=3)
+    ttk.Button(a_box, text="⏳ Slow Blink", width=12, command=lambda: apply_xpad_pattern(12)).pack(side="left", padx=3)
+    ttk.Button(a_box, text="🔀 Alternating", width=12, command=lambda: apply_xpad_pattern(13)).pack(side="left", padx=3)
+
+    xpad_status_lbl = ttk.Label(xpad_frame, text="", wraplength=640)
+    xpad_status_lbl.pack(anchor="w", padx=4, pady=4)
+
+    # -------------------------------------------------------------
+    # 3. Generic Frame (fallback when device has no LEDs)
+    # -------------------------------------------------------------
+    generic_frame = ttk.LabelFrame(led_container, text=" Controller LED Status ", padding=10)
+    ttk.Label(generic_frame, text="No LED controls supported for this controller profile.").pack(pady=10)
+
+    # Switch visible LED panel based on selected device profile
+    def update_active_panel(*_):
+        d = get_selected_dev()
+        ds4_frame.pack_forget()
+        xpad_frame.pack_forget()
+        generic_frame.pack_forget()
+        if d:
+            if d.is_ds4:
+                ds4_frame.pack(fill="x")
+            elif d.is_xpad:
+                xpad_frame.pack(fill="x")
+                if d.xpad_led_path:
+                    xpad_status_lbl.config(text=f"LED node: {d.xpad_led_path}", foreground="#555")
+                else:
+                    xpad_status_lbl.config(text="⚠️ No xpad LED node found in /sys/class/leds/.", foreground="#c9302c")
+            else:
+                generic_frame.pack(fill="x")
+
+    dev_combo.bind("<<ComboboxSelected>>", update_active_panel)
+
+    def refresh_devices():
+        nonlocal devices
+        for d in devices:
+            d.close()
+        devices = discover_gamepads()
+        if not devices:
+            dev_combo['values'] = ["No compatible gamepads found"]
+            dev_combo.current(0)
+            update_active_panel()
+            return
+        dev_combo['values'] = [f"{d.name} ({d.event_path or d.hidraw_path})" for d in devices]
+        dev_combo.current(0)
+        update_active_panel()
+
+    ttk.Button(dev_frame, text="↻ Refresh", command=refresh_devices).pack(side="left", padx=5)
+    refresh_devices()
+
+    def on_closing():
+        for d in devices:
+            d.close()
+        root.destroy()
+
+    root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()
 
 
@@ -509,16 +694,24 @@ def main():
     parser.add_argument("--rumble", nargs=2, type=int, metavar=("LEFT", "RIGHT"), help="Vibrate both motors (0-100%%)")
     parser.add_argument("--duration", type=float, default=1.0, help="Vibration duration in seconds (default: 1.0)")
     parser.add_argument("--color", nargs=3, type=int, metavar=("R", "G", "B"), help="Set DS4 Lightbar RGB color (0-255)")
+    parser.add_argument("--xpad-led", type=int, metavar="PATTERN", help="Set Xbox 360 Ring of Light pattern (0-14)")
     args = parser.parse_args()
 
     devices = discover_gamepads()
 
     # One-liner CLI arguments
-    if args.rumble_left is not None or args.rumble_right is not None or args.rumble is not None or args.color is not None:
+    if (args.rumble_left is not None or args.rumble_right is not None or 
+        args.rumble is not None or args.color is not None or args.xpad_led is not None):
         if not devices:
             print("[!] Error: No compatible gamepads detected.")
             sys.exit(1)
         dev = devices[0]
+        if args.xpad_led is not None:
+            ok, msg = dev.set_xpad_led(args.xpad_led)
+            if ok:
+                print(f">> Applied pattern {args.xpad_led} to Xbox 360 LED on {dev.name}!")
+            else:
+                print(f"[!] {msg}")
         if args.color is not None:
             r, g, b = args.color
             print(f">> Setting Lightbar color ({r}, {g}, {b}) on {dev.name}...")
