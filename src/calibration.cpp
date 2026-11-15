@@ -13,6 +13,9 @@ void calibration_init() {
 
     bool invalid = (g_calibration.magic != EEPROM_MAGIC);
     if (!invalid) {
+        if (g_calibration.gamepad_mode > 2) {
+            g_calibration.gamepad_mode = 0; // Default to MODE_PC
+        }
         for (int i = 0; i < 4; i++) {
             if (g_calibration.axes[i].min_val >= g_calibration.axes[i].max_val ||
                 g_calibration.axes[i].center_val <= g_calibration.axes[i].min_val ||
@@ -28,6 +31,7 @@ void calibration_init() {
     if (invalid) {
         g_calibration.magic = EEPROM_MAGIC;
         g_calibration.deadzone_percent = DEFAULT_DEADZONE_PERCENT;
+        g_calibration.gamepad_mode = 0; // MODE_PC
 
         for (int i = 0; i < 4; i++) {
             g_calibration.axes[i].center_val = ADC_DEFAULT_CENTER; // 2056

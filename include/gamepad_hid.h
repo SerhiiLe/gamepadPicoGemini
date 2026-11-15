@@ -1,22 +1,22 @@
 #ifndef GAMEPAD_HID_H
 #define GAMEPAD_HID_H
 
-typedef struct __attribute__((packed)) {
-    uint8_t  buttons[2];   // 15 Digital Buttons + 1-bit padding (2 bytes / 16 bits total)
-    uint8_t  hat;          // 8-Way Hat Switch / D-Pad (1 byte: 0=Neutral, 1=Up, 2=Up-Right, ..., 8=Up-Left)
-    int16_t  x;            // Left Stick X (-32767 .. 32767)
-    int16_t  y;            // Left Stick Y (-32767 .. 32767)
-    int16_t  rx;           // Right Stick X (-32767 .. 32767)
-    int16_t  ry;           // Right Stick Y (-32767 .. 32767)
-    uint8_t  z;            // Left Trigger LT (0 .. 255)
-    uint8_t  rz;           // Right Trigger RT (0 .. 255)
-} GamepadInputReport_t;
+#include <Arduino.h>
+#include "gamepad_modes.h"
+#include "desc_pc.h"
+#include "desc_android.h"
+#include "desc_ds4.h"
 
 // Feedback received from Host
-extern volatile uint8_t g_rumble_intensity; // 0..255
-extern volatile uint8_t g_led_intensity;    // 0..255
+extern volatile uint8_t g_rumble_left;      // Heavy motor (0..255) -> Red LED & GP18 PWM
+extern volatile uint8_t g_rumble_right;     // Soft motor (0..255)  -> Blue LED
+extern volatile uint8_t g_host_led_r;       // Host-requested LED Red (DS4)
+extern volatile uint8_t g_host_led_g;       // Host-requested LED Green (DS4)
+extern volatile uint8_t g_host_led_b;       // Host-requested LED Blue (DS4)
+extern volatile bool    g_host_led_active;  // True if host is commanding LED
 
-void gamepad_hid_init();
+void gamepad_hid_init(GamepadMode mode);
+GamepadMode gamepad_hid_get_mode();
 bool gamepad_hid_send_report(uint32_t button_mask, int16_t lx, int16_t ly, int16_t rx, int16_t ry);
 
 #endif // GAMEPAD_HID_H

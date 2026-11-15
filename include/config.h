@@ -94,7 +94,7 @@ const uint8_t BUTTON_PINS[NUM_BUTTONS] = {
 
 // USB Device Descriptors
 #define GAMEPAD_USBD_VID            0x2E8A
-#define GAMEPAD_USBD_PID            0x0013
+#define GAMEPAD_USBD_PID            0x0014
 #define GAMEPAD_USBD_MANUFACTURER   "RP2040"
 #define GAMEPAD_USBD_PRODUCT        "Gamepad rp2040"
 

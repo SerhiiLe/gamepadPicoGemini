@@ -11,6 +11,8 @@ struct CalibrationData {
     uint32_t magic;
     AxisCalibration axes[4]; // 0: LX, 1: LY, 2: RX, 3: RY
     uint8_t deadzone_percent;
+    uint8_t gamepad_mode;    // 0: MODE_PC, 1: MODE_ANDROID, 2: MODE_DS4
+    uint8_t reserved[2];
 };
 
 extern CalibrationData g_calibration;
