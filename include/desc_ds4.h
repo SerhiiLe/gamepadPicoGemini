@@ -26,14 +26,17 @@ typedef struct __attribute__((packed)) {
 // Sony DualShock 4 Output Report Structure (Report ID 0x05, 32 Bytes total)
 typedef struct __attribute__((packed)) {
     uint8_t  report_id;    // 0x05
-    uint8_t  flags;        // Bit 0: Rumble enable, Bit 1: LED enable
+    uint8_t  valid_flag0;  // Bit 0: Motor enable, Bit 1: LED enable
+    uint8_t  valid_flag1;  // Flash / blink enable
     uint8_t  reserved;
     uint8_t  motor_right;  // Light / high-frequency rumble motor (0 .. 255)
     uint8_t  motor_left;   // Heavy / low-frequency rumble motor (0 .. 255)
     uint8_t  led_r;        // Lightbar Red (0 .. 255)
     uint8_t  led_g;        // Lightbar Green (0 .. 255)
     uint8_t  led_b;        // Lightbar Blue (0 .. 255)
-    uint8_t  extra[24];
+    uint8_t  blink_on;
+    uint8_t  blink_off;
+    uint8_t  extra[21];
 } DS4OutputReport_t;
 
 // Canonical Sony DualShock 4 USB HID Report Descriptor

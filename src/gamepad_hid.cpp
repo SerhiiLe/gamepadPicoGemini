@@ -25,15 +25,20 @@ static void hid_set_report_cb(uint8_t report_id, hid_report_type_t report_type, 
         uint8_t offset = (buffer[0] == 0x05) ? 1 : 0;
         if (bufsize >= offset + 8) {
             uint8_t flags = buffer[offset + 0];
+
             // Motor right = soft (high-freq), motor left = heavy (low-freq)
-            g_rumble_right = buffer[offset + 2];
-            g_rumble_left  = buffer[offset + 3];
+            if ((flags & 0x01) || (flags == 0)) {
+                g_rumble_right = buffer[offset + 3];
+                g_rumble_left  = buffer[offset + 4];
+            }
 
             // LED colors
-            g_host_led_r = buffer[offset + 4];
-            g_host_led_g = buffer[offset + 5];
-            g_host_led_b = buffer[offset + 6];
-            g_host_led_active = (g_host_led_r > 0 || g_host_led_g > 0 || g_host_led_b > 0);
+            if ((flags & 0x02) || (flags == 0)) {
+                g_host_led_r = buffer[offset + 5];
+                g_host_led_g = buffer[offset + 6];
+                g_host_led_b = buffer[offset + 7];
+                g_host_led_active = (g_host_led_r > 0 || g_host_led_g > 0 || g_host_led_b > 0);
+            }
         }
     } else {
         // Generic PC / Android Output Report (Byte 0: Rumble, Byte 1: LED)
@@ -113,6 +118,9 @@ static uint16_t hid_get_report_cb(uint8_t report_id, hid_report_type_t report_ty
                 buffer[2] = 128; // z
                 buffer[3] = 128; // rz
                 buffer[4] = 0x08; // neutral dpad
+            }
+            if (reqlen >= 30) {
+                buffer[29] = 0x1B; // Cable connected (0x10) | Battery Full (0x0B)
             }
             return (reqlen < 63) ? reqlen : 63;
         }
@@ -204,6 +212,7 @@ void gamepad_hid_init(GamepadMode mode) {
             break;
     }
 
+    usb_hid.enableOutEndpoint(true); // Enable Interrupt OUT endpoint for Host Output Reports (Rumble & LED)
     usb_hid.setPollInterval(1); // 1000Hz (1ms)
     usb_hid.setReportCallback(hid_get_report_cb, hid_set_report_cb);
     usb_hid.begin();
@@ -299,6 +308,26 @@ bool gamepad_hid_send_report(uint32_t button_mask, int16_t lx, int16_t ly, int16
 
         rep.l2_trigger = lt_val;
         rep.r2_trigger = rt_val;
+
+        // Advance sensor timestamp ticks (~188 per ms)
+        static uint16_t s_sensor_timestamp = 0;
+        s_sensor_timestamp += 188;
+        memcpy(&rep.padding[0], &s_sensor_timestamp, 2);
+
+        // Power & Battery Status:
+        // offset 29 in common (padding[20]):
+        // DS4_STATUS0_CABLE_STATE (0x10) | DS4_BATTERY_STATUS_FULL (0x0B) = 0x1B (Cable connected, 100% Full)
+        rep.padding[20] = 0x1B;
+        rep.padding[21] = 0x00; // status1: connected
+
+        // Touchpad: mark touch points as inactive (DS4_TOUCH_POINT_INACTIVE = 0x80)
+        rep.padding[23] = 0;    // num_touch_reports = 0
+        rep.padding[25] = 0x80; // touch point 0 inactive (finger up)
+        rep.padding[29] = 0x80; // touch point 1 inactive (finger up)
+        rep.padding[34] = 0x80;
+        rep.padding[38] = 0x80;
+        rep.padding[43] = 0x80;
+        rep.padding[47] = 0x80;
 
         return usb_hid.sendReport(1, &rep, sizeof(rep));
     }
