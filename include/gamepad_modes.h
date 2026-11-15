@@ -12,18 +12,18 @@ enum GamepadMode : uint8_t {
 // Base LED mode colors at low idle brightness (15 out of 255)
 // Mode PC: Cyan (R=0, G=15, B=15)
 #define COLOR_PC_R         0
-#define COLOR_PC_G         10
-#define COLOR_PC_B         10
+#define COLOR_PC_G         5
+#define COLOR_PC_B         5
 
 // Mode Android: Orange/Amber (R=15, G=6, B=0)
-#define COLOR_ANDROID_R    15
-#define COLOR_ANDROID_G    6
+#define COLOR_ANDROID_R    8
+#define COLOR_ANDROID_G    3
 #define COLOR_ANDROID_B    0
 
 // Mode DualShock 4: Deep Blue (R=0, G=2, B=15)
-#define COLOR_DS4_R        0
-#define COLOR_DS4_G        2
-#define COLOR_DS4_B        15
+#define COLOR_DS4_R        1
+#define COLOR_DS4_G        0
+#define COLOR_DS4_B        8
 
 #endif // GAMEPAD_MODES_H
 

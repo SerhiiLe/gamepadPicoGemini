@@ -156,13 +156,13 @@ void loop() {
 
     // -------------------------------------------------------------
     // 4. Feedback Outputs: WS2812 RGB LED & GP18 PWM Rumble Motor
-    //    - When Rumble is active:
-    //        Left motor  = Red intensity
-    //        Right motor = Blue intensity
-    //    - When Host commands LED color (e.g. Steam in DS4 mode):
-    //        Displays host-commanded RGB color
-    //    - When Idle:
-    //        Displays active mode color at brightness 15 out of 255
+    //    Priority:
+    //    - When Rumble is active (left or right motor > 0):
+    //        Left motor  = Red intensity   (target_r = g_rumble_left)
+    //        Right motor = Blue intensity  (target_b = g_rumble_right)
+    //        Both motors = Purple          (target_r = g_rumble_left, target_b = g_rumble_right)
+    //    - When Rumble is NOT active (idle):
+    //        Displays active mode color (at brightness 15 out of 255)
     // -------------------------------------------------------------
     static uint8_t last_r = 255;
     static uint8_t last_g = 255;
@@ -176,11 +176,6 @@ void loop() {
         target_r = g_rumble_left;
         target_g = 0;
         target_b = g_rumble_right;
-    } else if (g_host_led_active) {
-        // Host commanded color (e.g. game health/status in DS4 mode)
-        target_r = g_host_led_r;
-        target_g = g_host_led_g;
-        target_b = g_host_led_b;
     } else {
         // Idle: Base mode color at low brightness (15 out of 255)
         get_mode_color(gamepad_hid_get_mode(), target_r, target_g, target_b);

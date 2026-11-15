@@ -17,40 +17,35 @@ static Adafruit_USBD_HID usb_hid;
 
 // Output report callback (Rumble & LED feedback from host)
 static void hid_set_report_cb(uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize) {
-    if (report_type != HID_REPORT_TYPE_OUTPUT) return;
-
     if (s_active_mode == MODE_DS4) {
-        // Sony DualShock 4 Output Report (Report ID 0x05 on USB)
-        // buffer[0] may be Report ID 0x05 or payload starts directly depending on stack
-        uint8_t offset = (buffer[0] == 0x05) ? 1 : 0;
-        if (bufsize >= offset + 8) {
-            uint8_t flags = buffer[offset + 0];
+        // Sony DualShock 4 Output Report (Report ID 0x05)
+        // If Report ID 0x05 is in buffer[0] (as sent via USB Interrupt OUT endpoint), data starts at buffer[1]
+        // If TinyUSB stripped Report ID (e.g. SET_REPORT on control ep), data starts at buffer[0]
+        uint8_t offset = 0;
+        if (buffer[0] == 0x05 && bufsize >= 9) {
+            offset = 1;
+        }
 
-            // Motor right = soft (high-freq), motor left = heavy (low-freq)
-            if ((flags & 0x01) || (flags == 0)) {
-                g_rumble_right = buffer[offset + 3];
-                g_rumble_left  = buffer[offset + 4];
-            }
+        if (bufsize >= offset + 5) {
+            uint8_t flags   = buffer[offset + 0];
+            uint8_t motor_r = buffer[offset + 3]; // Light / high-freq rumble motor (0..255)
+            uint8_t motor_l = buffer[offset + 4]; // Heavy / low-freq rumble motor (0..255)
 
-            // LED colors
-            if ((flags & 0x02) || (flags == 0)) {
-                g_host_led_r = buffer[offset + 5];
-                g_host_led_g = buffer[offset + 6];
-                g_host_led_b = buffer[offset + 7];
-                g_host_led_active = (g_host_led_r > 0 || g_host_led_g > 0 || g_host_led_b > 0);
+            // Update rumble if MOTOR flag (bit 0) is set, or if motors have non-zero value, or if flags == 0
+            if ((flags & 0x01) || (motor_r > 0 || motor_l > 0) || (flags == 0)) {
+                g_rumble_right = motor_r;
+                g_rumble_left  = motor_l;
             }
         }
     } else {
-        // Generic PC / Android Output Report (Byte 0: Rumble, Byte 1: LED)
+        // Generic PC / Android Output Report (Byte 0: Rumble)
         if (bufsize >= 1) {
-            g_rumble_left  = buffer[0];
-            g_rumble_right = buffer[0];
-            if (bufsize >= 2) {
-                g_host_led_r = buffer[1];
-                g_host_led_g = buffer[1];
-                g_host_led_b = buffer[1];
-                g_host_led_active = (buffer[1] > 0);
+            uint8_t val = buffer[0];
+            if (val == 0 && bufsize > 1 && buffer[1] > 0) {
+                val = buffer[1];
             }
+            g_rumble_left  = val;
+            g_rumble_right = val;
         }
     }
 }
