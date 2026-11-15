@@ -315,7 +315,7 @@ def run_gui(devices):
 
     root = tk.Tk()
     root.title("Gamepad Tester - Rumble & Lightbar (DS4 / Xbox 360)")
-    root.geometry("620x540")
+    root.geometry("680x540")
     root.resizable(False, False)
 
     # Frame: Device Selection
@@ -397,7 +397,7 @@ def run_gui(devices):
     ds4_frame.pack(fill="x", padx=12, pady=8)
 
     preview_canvas = tk.Canvas(ds4_frame, width=54, height=54, bg="#FFFFFF", highlightthickness=2, highlightbackground="#555")
-    preview_canvas.grid(row=0, column=3, rowspan=2, padx=16, pady=4)
+    preview_canvas.grid(row=0, column=2, rowspan=3, padx=16, pady=4)
 
     live_var = tk.BooleanVar(value=True)
 
@@ -415,56 +415,61 @@ def run_gui(devices):
     rgb_box = ttk.Frame(ds4_frame)
     rgb_box.grid(row=1, column=0, columnspan=3, pady=4, sticky="w")
 
-    r_val_lbl = ttk.Label(rgb_box, text="255", width=4)
-    g_val_lbl = ttk.Label(rgb_box, text="255", width=4)
-    b_val_lbl = ttk.Label(rgb_box, text="255", width=4)
-
-    def on_r_change(val):
-        r = int(float(val))
-        r_val_lbl.config(text=str(r))
-        if live_var.get():
-            set_color_hardware(r, int(float(g_slider.get())), int(float(b_slider.get())))
-
-    def on_g_change(val):
-        g = int(float(val))
-        g_val_lbl.config(text=str(g))
-        if live_var.get():
-            set_color_hardware(int(float(r_slider.get())), g, int(float(b_slider.get())))
-
-    def on_b_change(val):
-        b = int(float(val))
-        b_val_lbl.config(text=str(b))
-        if live_var.get():
-            set_color_hardware(int(float(r_slider.get())), int(float(g_slider.get())), b)
+    r_val_lbl = ttk.Label(rgb_box, text="5", width=4)
+    g_val_lbl = ttk.Label(rgb_box, text="5", width=4)
+    b_val_lbl = ttk.Label(rgb_box, text="5", width=4)
 
     # Row 0: Red
     ttk.Label(rgb_box, text="Red:").grid(row=0, column=0, sticky="w", padx=2, pady=2)
-    r_slider = ttk.Scale(rgb_box, from_=0, to=255, orient="horizontal", length=220, command=on_r_change)
-    r_slider.set(255)
+    r_slider = ttk.Scale(rgb_box, from_=0, to=255, orient="horizontal", length=220)
+    r_slider.set(5)
     r_slider.grid(row=0, column=1, padx=6, pady=2)
     r_val_lbl.grid(row=0, column=2, padx=4)
 
     # Row 1: Green
     ttk.Label(rgb_box, text="Green:").grid(row=1, column=0, sticky="w", padx=2, pady=2)
-    g_slider = ttk.Scale(rgb_box, from_=0, to=255, orient="horizontal", length=220, command=on_g_change)
-    g_slider.set(255)
+    g_slider = ttk.Scale(rgb_box, from_=0, to=255, orient="horizontal", length=220)
+    g_slider.set(5)
     g_slider.grid(row=1, column=1, padx=6, pady=2)
     g_val_lbl.grid(row=1, column=2, padx=4)
 
     # Row 2: Blue
     ttk.Label(rgb_box, text="Blue:").grid(row=2, column=0, sticky="w", padx=2, pady=2)
-    b_slider = ttk.Scale(rgb_box, from_=0, to=255, orient="horizontal", length=220, command=on_b_change)
-    b_slider.set(255)
+    b_slider = ttk.Scale(rgb_box, from_=0, to=255, orient="horizontal", length=220)
+    b_slider.set(5)
     b_slider.grid(row=2, column=1, padx=6, pady=2)
     b_val_lbl.grid(row=2, column=2, padx=4)
 
-    def update_ds4_color(r, g, b):
-        r_slider.set(r)
-        g_slider.set(g)
-        b_slider.set(b)
+    is_updating = False
+
+    def on_color_change(*_):
+        if is_updating:
+            return
+        r = int(float(r_slider.get()))
+        g = int(float(g_slider.get()))
+        b = int(float(b_slider.get()))
         r_val_lbl.config(text=str(r))
         g_val_lbl.config(text=str(g))
         b_val_lbl.config(text=str(b))
+        if live_var.get():
+            set_color_hardware(r, g, b)
+
+    r_slider.configure(command=on_color_change)
+    g_slider.configure(command=on_color_change)
+    b_slider.configure(command=on_color_change)
+
+    def update_ds4_color(r, g, b):
+        nonlocal is_updating
+        is_updating = True
+        try:
+            r_slider.set(r)
+            g_slider.set(g)
+            b_slider.set(b)
+            r_val_lbl.config(text=str(r))
+            g_val_lbl.config(text=str(g))
+            b_val_lbl.config(text=str(b))
+        finally:
+            is_updating = False
         set_color_hardware(r, g, b)
 
     ttk.Button(preset_box, text="🔴 Red", width=7, command=lambda: update_ds4_color(255, 0, 0)).pack(side="left", padx=2)
@@ -474,7 +479,6 @@ def run_gui(devices):
     ttk.Button(preset_box, text="🟣 Magenta", width=7, command=lambda: update_ds4_color(255, 0, 255)).pack(side="left", padx=2)
     ttk.Button(preset_box, text="🔷 Cyan", width=7, command=lambda: update_ds4_color(0, 255, 255)).pack(side="left", padx=2)
     ttk.Button(preset_box, text="⚪ White", width=7, command=lambda: update_ds4_color(255, 255, 255)).pack(side="left", padx=2)
-    ttk.Button(preset_box, text="⚫ Off", width=7, command=lambda: update_ds4_color(0, 0, 0)).pack(side="left", padx=2)
 
     # Actions: Live update checkbox & Apply button
     ctrl_bar = ttk.Frame(ds4_frame)
@@ -488,6 +492,7 @@ def run_gui(devices):
 
     ttk.Checkbutton(ctrl_bar, text="Live update on drag", variable=live_var).pack(side="left", padx=5)
     ttk.Button(ctrl_bar, text="Apply Color", command=on_apply_click).pack(side="left", padx=10)
+    ttk.Button(ctrl_bar, text="⚫ Off", width=7, command=lambda: update_ds4_color(0, 0, 0)).pack(side="left", padx=15)
 
     root.mainloop()
 
