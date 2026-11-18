@@ -1,5 +1,6 @@
 .pio
 .vscode
-
+*.json
 __pycache__/
 *.pyc
+*.gp2040

@@ -111,7 +111,11 @@ void setup() {
 }
 
 void loop() {
+    static long last_time = 0;
     unsigned long now = millis();
+
+    if (last_time == now) return;
+    last_time = now;
 
     // -------------------------------------------------------------
     // 1. Debounce and Read All 17 Buttons
@@ -219,5 +223,4 @@ void loop() {
         pixels.show();
     }
 
-    delay(1);
 }
