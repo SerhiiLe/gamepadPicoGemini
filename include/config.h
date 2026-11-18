@@ -81,10 +81,10 @@ const uint8_t BUTTON_PINS[NUM_BUTTONS] = {
 // ==========================================
 
 // Software Debounce time in milliseconds
-#define DEBOUNCE_DELAY_MS   15
+#define DEBOUNCE_DELAY_MS   10
 
 // Analog Stick Deadzone percentage (0..100)
-#define DEFAULT_DEADZONE_PERCENT 8
+#define DEFAULT_DEADZONE_PERCENT 3
 
 // Exponential Moving Average (EMA) alpha factor for ADC noise filtering (0.0..1.0)
 #define EMA_ALPHA           0.25f

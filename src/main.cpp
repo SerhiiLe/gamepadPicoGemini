@@ -23,6 +23,11 @@ static void get_mode_color(GamepadMode mode, uint8_t &r, uint8_t &g, uint8_t &b)
             g = COLOR_DS4_G;
             b = COLOR_DS4_B;
             break;
+        case MODE_NINTENDO:
+            r = COLOR_NINTENDO_R;
+            g = COLOR_NINTENDO_G;
+            b = COLOR_NINTENDO_B;
+            break;
         case MODE_PC:
         default:
             r = COLOR_PC_R;
@@ -62,25 +67,31 @@ void setup() {
     // 6. Check Boot Mode Selection Keys:
     //    - Hold Central Key -> Boot Calibration Mode
     //    - Hold Button X    -> Switch to MODE_PC
-    //    - Hold Button B    -> Switch to MODE_ANDROID
     //    - Hold Button Y    -> Switch to MODE_DS4
+    //    - Hold Button A    -> Switch to MODE_ANDROID
+    //    - Hold Button B    -> Switch to MODE_NINTENDO
     bool mode_changed = false;
 
     if (digitalRead(BUTTON_PINS[INDEX_BTN_CENTRAL]) == LOW) {
         run_calibration_mode(pixels);
-    } else if (digitalRead(BUTTON_PINS[2]) == LOW) { // Button X held
+    } else if (digitalRead(BUTTON_PINS[2]) == LOW) { // Button X held -> PC
         if (g_calibration.gamepad_mode != MODE_PC) {
             g_calibration.gamepad_mode = MODE_PC;
             mode_changed = true;
         }
-    } else if (digitalRead(BUTTON_PINS[1]) == LOW) { // Button B held
+    } else if (digitalRead(BUTTON_PINS[3]) == LOW) { // Button Y held -> DS4
+        if (g_calibration.gamepad_mode != MODE_DS4) {
+            g_calibration.gamepad_mode = MODE_DS4;
+            mode_changed = true;
+        }
+    } else if (digitalRead(BUTTON_PINS[0]) == LOW) { // Button A held -> Android
         if (g_calibration.gamepad_mode != MODE_ANDROID) {
             g_calibration.gamepad_mode = MODE_ANDROID;
             mode_changed = true;
         }
-    } else if (digitalRead(BUTTON_PINS[3]) == LOW) { // Button Y held
-        if (g_calibration.gamepad_mode != MODE_DS4) {
-            g_calibration.gamepad_mode = MODE_DS4;
+    } else if (digitalRead(BUTTON_PINS[1]) == LOW) { // Button B held -> Nintendo
+        if (g_calibration.gamepad_mode != MODE_NINTENDO) {
+            g_calibration.gamepad_mode = MODE_NINTENDO;
             mode_changed = true;
         }
     }
@@ -168,6 +179,7 @@ void loop() {
     //          DS4 initial: dim white (5, 5, 5) until host commands lightbar
     //          PC: cyan (0, 5, 5)
     //          Android: orange (8, 3, 0)
+    //          Nintendo: red (8, 0, 0)
     // -------------------------------------------------------------
     static uint8_t last_r = 255;
     static uint8_t last_g = 255;

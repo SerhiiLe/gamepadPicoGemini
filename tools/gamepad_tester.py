@@ -55,12 +55,13 @@ def find_xpad_led_path(event_path):
 
 
 class GamepadDevice:
-    def __init__(self, name, event_path=None, hidraw_path=None, is_ds4=False, is_xpad=False):
+    def __init__(self, name, event_path=None, hidraw_path=None, is_ds4=False, is_xpad=False, is_switch=False):
         self.name = name
         self.event_path = event_path
         self.hidraw_path = hidraw_path
         self.is_ds4 = is_ds4
         self.is_xpad = is_xpad
+        self.is_switch = is_switch
         self._ff_fd = None
         self.active_effect_id = -1
         self._ff_stop_timer = None
@@ -230,16 +231,17 @@ def discover_gamepads():
             has_ff = bool(ev_val & (1 << EV_FF))
             os.close(fd)
 
-            if has_ff:
+            if has_ff or ('POKKEN' in name or 'Nintendo' in name or 'Switch' in name or 'HORI' in name):
                 is_ds4 = ('Wireless Controller' in name or 'Sony' in name or 'DualShock' in name)
                 is_xpad = ('Xbox' in name or 'X-Box' in name or 'Microsoft' in name)
+                is_switch = ('POKKEN' in name or 'Nintendo' in name or 'Switch' in name or 'HORI' in name)
                 h_path = ds4_hidraw.get(name)
 
                 # Avoid duplicate entries for motion sensor/touchpad input events
                 if is_ds4 and ('Motion Sensors' in name or 'Touchpad' in name):
                     continue
 
-                dev = GamepadDevice(name, event_path=ev, hidraw_path=h_path, is_ds4=is_ds4, is_xpad=is_xpad)
+                dev = GamepadDevice(name, event_path=ev, hidraw_path=h_path, is_ds4=is_ds4, is_xpad=is_xpad, is_switch=is_switch)
                 devices.append(dev)
                 seen_events.add(ev)
         except Exception:
@@ -258,20 +260,20 @@ def discover_gamepads():
 # ==============================================================================
 def run_cli(devices):
     if not devices:
-        print("\n[!] No compatible gamepads with Force Feedback found!")
+        print("\n[!] No compatible gamepads found!")
         print("    Make sure your controller is connected via USB and recognized by Linux.")
         return
 
     while True:
         print("\n" + "="*60)
-        print("          GAMEPAD TESTER (DualShock 4 & Xbox 360)")
+        print("      GAMEPAD TESTER (DualShock 4 / Xbox 360 / Nintendo)")
         print("="*60)
         print("Connected Devices:")
         for idx, dev in enumerate(devices):
             info = []
             if dev.event_path: info.append(dev.event_path)
             if dev.hidraw_path: info.append(dev.hidraw_path)
-            mode_tag = "[DS4]" if dev.is_ds4 else ("[Xbox 360]" if dev.is_xpad else "[Gamepad]")
+            mode_tag = "[DS4]" if dev.is_ds4 else ("[Xbox 360]" if dev.is_xpad else ("[Switch]" if dev.is_switch else "[Gamepad]"))
             print(f"  [{idx + 1}] {mode_tag} {dev.name} ({', '.join(info)})")
 
         dev_idx = 0
@@ -634,7 +636,8 @@ def run_gui(devices):
     # 3. Generic Frame (fallback when device has no LEDs)
     # -------------------------------------------------------------
     generic_frame = ttk.LabelFrame(led_container, text=" Controller LED Status ", padding=10)
-    ttk.Label(generic_frame, text="No LED controls supported for this controller profile.").pack(pady=10)
+    generic_status_lbl = ttk.Label(generic_frame, text="No LED controls supported for this controller profile.")
+    generic_status_lbl.pack(pady=10)
 
     # Switch visible LED panel based on selected device profile
     def update_active_panel(*_):
@@ -651,8 +654,12 @@ def run_gui(devices):
                     xpad_status_lbl.config(text=f"LED node: {d.xpad_led_path}", foreground="#555")
                 else:
                     xpad_status_lbl.config(text="⚠️ No xpad LED node found in /sys/class/leds/.", foreground="#c9302c")
+            elif d.is_switch:
+                generic_frame.pack(fill="x")
+                generic_status_lbl.config(text="🎮 Nintendo Switch Mode (HORI Pokken Protocol: Plug & Play on Switch, Steam, PC)")
             else:
                 generic_frame.pack(fill="x")
+                generic_status_lbl.config(text="No LED controls supported for this controller profile.")
 
     dev_combo.bind("<<ComboboxSelected>>", update_active_panel)
 

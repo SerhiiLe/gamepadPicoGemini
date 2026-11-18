@@ -208,6 +208,13 @@ void gamepad_hid_init(GamepadMode mode) {
             usb_hid.setReportDescriptor(desc_hid_report_ds4, sizeof(desc_hid_report_ds4));
             break;
 
+        case MODE_NINTENDO:
+            TinyUSBDevice.setID(USBD_VID_NINTENDO, USBD_PID_NINTENDO);
+            TinyUSBDevice.setManufacturerDescriptor(USBD_MANUFACTURER_NINTENDO);
+            TinyUSBDevice.setProductDescriptor(USBD_PRODUCT_NINTENDO);
+            usb_hid.setReportDescriptor(desc_hid_report_nintendo, sizeof(desc_hid_report_nintendo));
+            break;
+
         case MODE_PC:
         default:
             s_active_mode = MODE_PC;
@@ -339,7 +346,49 @@ bool gamepad_hid_send_report(uint32_t button_mask, int16_t lx, int16_t ly, int16
     }
 
     // ==========================================
-    // 2. Android Mode Report
+    // 2. Nintendo Switch Mode Report
+    // ==========================================
+    if (s_active_mode == MODE_NINTENDO) {
+        GamepadReportNintendo_t rep;
+        memset(&rep, 0, sizeof(rep));
+
+        // Byte 0 (bits 0..7): Y, B, A, X, L, R, ZL, ZR
+        // Positional mapping matching real Nintendo Switch Pro Controller / Joy-Con:
+        // - Physical Left button   (PIN_BTN_X / index 2) -> Nintendo Y (Bit 0)
+        // - Physical Bottom button (PIN_BTN_A / index 0) -> Nintendo B (Bit 1)
+        // - Physical Right button  (PIN_BTN_B / index 1) -> Nintendo A (Bit 2)
+        // - Physical Top button    (PIN_BTN_Y / index 3) -> Nintendo X (Bit 3)
+        if (button_mask & (1UL << 2)) rep.buttons |= (1 << 0); // Y
+        if (button_mask & (1UL << 0)) rep.buttons |= (1 << 1); // B
+        if (button_mask & (1UL << 1)) rep.buttons |= (1 << 2); // A
+        if (button_mask & (1UL << 3)) rep.buttons |= (1 << 3); // X
+        if (button_mask & (1UL << 4)) rep.buttons |= (1 << 4); // L (LB)
+        if (button_mask & (1UL << 5)) rep.buttons |= (1 << 5); // R (RB)
+        if (button_mask & (1UL << 6)) rep.buttons |= (1 << 6); // ZL (LT)
+        if (button_mask & (1UL << 7)) rep.buttons |= (1 << 7); // ZR (RT)
+
+        // Byte 1 (bits 8..15): Minus, Plus, LClick, RClick, HOME, Capture
+        if (button_mask & (1UL << 8))  rep.buttons |= (1 << 8);  // Minus (Select)
+        if (button_mask & (1UL << 9))  rep.buttons |= (1 << 9);  // Plus (Start)
+        if (button_mask & (1UL << 10)) rep.buttons |= (1 << 10); // L3 (Left Stick Click)
+        if (button_mask & (1UL << 11)) rep.buttons |= (1 << 11); // R3 (Right Stick Click)
+        if (button_mask & (1UL << 12)) rep.buttons |= (1 << 12); // HOME (Central Key)
+
+        // Hat switch (D-Pad): 0=Up, 1=Up-Right, ..., 7=Up-Left, 8=Neutral
+        rep.hat = compute_hat_ds4(button_mask);
+
+        // Analog Sticks: 0..255 (Center 128)
+        rep.lx = axis16_to_uint8(lx);
+        rep.ly = axis16_to_uint8(ly);
+        rep.rx = axis16_to_uint8(rx);
+        rep.ry = axis16_to_uint8(ry);
+        rep.vendor = 0;
+
+        return usb_hid.sendReport(0, &rep, sizeof(rep));
+    }
+
+    // ==========================================
+    // 3. Android Mode Report
     // ==========================================
     if (s_active_mode == MODE_ANDROID) {
         GamepadReportAndroid_t rep;

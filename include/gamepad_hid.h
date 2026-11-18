@@ -6,6 +6,7 @@
 #include "desc_pc.h"
 #include "desc_android.h"
 #include "desc_ds4.h"
+#include "desc_nintendo.h"
 
 // Feedback received from Host
 extern volatile uint8_t g_rumble_left;      // Heavy motor (0..255) -> Red LED & GP18 PWM

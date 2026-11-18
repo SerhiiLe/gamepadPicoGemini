@@ -13,7 +13,7 @@ void calibration_init() {
 
     bool invalid = (g_calibration.magic != EEPROM_MAGIC);
     if (!invalid) {
-        if (g_calibration.gamepad_mode > 2) {
+        if (g_calibration.gamepad_mode > 3) {
             g_calibration.gamepad_mode = 0; // Default to MODE_PC
         }
         for (int i = 0; i < 4; i++) {
