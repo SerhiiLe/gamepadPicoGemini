@@ -69,3 +69,4 @@ uint8_t const desc_hid_report_nintendo[] = {
 };
 
 #endif // DESC_NINTENDO_H
+
