@@ -237,10 +237,10 @@ GamepadMode gamepad_hid_get_mode() {
     return s_active_mode;
 }
 
-// Convert signed 16-bit axis (-32767..32767) to unsigned 8-bit (0..255, center 128)
+// Convert signed 16-bit axis (-32767..32767) to unsigned 8-bit (0..255, center 128 with rounding)
 static inline uint8_t axis16_to_uint8(int16_t v) {
     int32_t val = (int32_t)v + 32767;
-    int32_t mapped = (val * 255) / 65534;
+    int32_t mapped = (val * 255 + 32767) / 65534;
     if (mapped < 0) mapped = 0;
     if (mapped > 255) mapped = 255;
     return (uint8_t)mapped;
