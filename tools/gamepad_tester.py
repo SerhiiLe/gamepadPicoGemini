@@ -231,7 +231,7 @@ def discover_gamepads():
             has_ff = bool(ev_val & (1 << EV_FF))
             os.close(fd)
 
-            if has_ff or ('POKKEN' in name or 'Nintendo' in name or 'Switch' in name or 'HORI' in name):
+            if has_ff or ('POKKEN' in name or 'Nintendo' in name or 'HORI' in name):
                 is_ds4 = ('Wireless Controller' in name or 'Sony' in name or 'DualShock' in name)
                 is_xpad = ('Xbox' in name or 'X-Box' in name or 'Microsoft' in name)
                 is_switch = ('POKKEN' in name or 'Nintendo' in name or 'Switch' in name or 'HORI' in name)
